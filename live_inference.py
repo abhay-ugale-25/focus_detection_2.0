@@ -5,6 +5,7 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 from collections import deque
+from statistics import mode
 from sklearn.preprocessing import StandardScaler
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -53,11 +54,10 @@ def main():
     sequence_buffer = deque(maxlen=30)
     label_names = {0: "Focused", 1: "Distracted", 2: "Drowsy"}
     
-    # Debounce variables
-    consecutive_predictions = 0
+    # Voting Buffer variables
+    prediction_buffer = deque(maxlen=15)
     current_active_state = 0  # Assume 0 is Focused
-    last_raw_prediction = 0
-    DEBOUNCE_FRAMES = 10
+    pred_idx = 0 # To store the last raw prediction for display
     
     # 4. MediaPipe FaceLandmarker Setup
     mp_drawing = drawing_utils
@@ -154,16 +154,9 @@ def main():
                             output = model(tensor)
                             pred_idx = torch.argmax(output, dim=1).item()
                             
-                            # --- Debounce Logic ---
-                            if pred_idx == last_raw_prediction:
-                                consecutive_predictions += 1
-                            else:
-                                consecutive_predictions = 1
-                                last_raw_prediction = pred_idx
-                                
-                            if consecutive_predictions >= DEBOUNCE_FRAMES and pred_idx != current_active_state:
-                                current_active_state = pred_idx
-                                # Optional: Backend notification / requests.post() goes here
+                            # --- Mode Filter (Voting Buffer) Logic ---
+                            prediction_buffer.append(pred_idx)
+                            current_active_state = mode(prediction_buffer)
                             
             else:
                 # No Face Detected (Pause buffer appending, display warning)
@@ -193,12 +186,12 @@ def main():
                 thickness=3
             )
             
-            # Raw Prediction & Loading Bar Overlay
+            # Raw Prediction Overlay
             if len(sequence_buffer) == 30:
-                raw_state_name = label_names.get(last_raw_prediction, "Unknown")
+                raw_state_name = label_names.get(pred_idx, "Unknown")
                 cv2.putText(
                     img=mirrored_frame,
-                    text=f"Raw: {raw_state_name} ({consecutive_predictions}/{DEBOUNCE_FRAMES})",
+                    text=f"Raw: {raw_state_name}",
                     org=(10, 80),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.7,
