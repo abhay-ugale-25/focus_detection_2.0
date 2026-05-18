@@ -1,0 +1,15 @@
+# Computer Vision
+opencv-python
+mediapipe
+
+# Deep Learning & Data
+torch
+torchvision
+pandas
+numpy
+scikit-learn
+
+# Backend & API
+fastapi
+uvicorn
+requests
