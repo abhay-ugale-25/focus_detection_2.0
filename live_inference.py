@@ -1,10 +1,7 @@
 import cv2
-import csv
-import time
 import mediapipe as mp
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 from collections import deque
@@ -56,6 +53,12 @@ def main():
     sequence_buffer = deque(maxlen=30)
     label_names = {0: "Focused", 1: "Distracted", 2: "Drowsy"}
     
+    # Debounce variables
+    consecutive_predictions = 0
+    current_active_state = 0  # Assume 0 is Focused
+    last_raw_prediction = 0
+    DEBOUNCE_FRAMES = 10
+    
     # 4. MediaPipe FaceLandmarker Setup
     mp_drawing = drawing_utils
     mp_drawing_styles = drawing_styles
@@ -75,13 +78,7 @@ def main():
     
     # --- Live Video Loop ---
     cap = cv2.VideoCapture(0)
-    
-    # --- Initialize Logger ---
-    csv_file = open("inference_debug_log.csv", "w", newline="")
-    csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(['timestamp', 'raw_ear', 'raw_gaze', 'raw_nose', 'scaled_ear', 'scaled_gaze', 'scaled_nose', 'prob_focused', 'prob_distracted', 'prob_drowsy', 'predicted_label'])
     baseline_y = None
-    current_state = "Gathering data..."
     
     print("\nStarting live inference...")
     print("Press 'b' to set the baseline posture (required for accurate predictions).")
@@ -156,23 +153,17 @@ def main():
                         with torch.no_grad():
                             output = model(tensor)
                             pred_idx = torch.argmax(output, dim=1).item()
-                            current_state = label_names.get(pred_idx, "Unknown")
                             
-                            # Log probabilities and states
-                            probs = F.softmax(output, dim=1).squeeze().cpu().numpy()
-                            prob_foc, prob_dist, prob_drow = probs[0], probs[1], probs[2]
-                            
-                            raw_latest = sequence_buffer[-1]
-                            scaled_latest = seq_scaled[-1]
-                            
-                            csv_writer.writerow([
-                                time.time(),
-                                raw_latest[0], raw_latest[1], raw_latest[2],
-                                scaled_latest[0], scaled_latest[1], scaled_latest[2],
-                                prob_foc, prob_dist, prob_drow,
-                                pred_idx
-                            ])
-                            csv_file.flush()
+                            # --- Debounce Logic ---
+                            if pred_idx == last_raw_prediction:
+                                consecutive_predictions += 1
+                            else:
+                                consecutive_predictions = 1
+                                last_raw_prediction = pred_idx
+                                
+                            if consecutive_predictions >= DEBOUNCE_FRAMES and pred_idx != current_active_state:
+                                current_active_state = pred_idx
+                                # Optional: Backend notification / requests.post() goes here
                             
             else:
                 # No Face Detected (Pause buffer appending, display warning)
@@ -180,15 +171,21 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
             # --- Visual Output ---
-            color = (0, 255, 0) # Green for Focused
-            if current_state == "Distracted":
-                color = (0, 165, 255) # Orange
-            elif current_state == "Drowsy":
-                color = (0, 0, 255) # Red
+            if len(sequence_buffer) < 30:
+                active_state_name = "Gathering data..."
+                color = (0, 255, 0)
+            else:
+                active_state_name = label_names.get(current_active_state, "Unknown")
+                color = (0, 255, 0) # Green for Focused
+                if active_state_name == "Distracted":
+                    color = (0, 165, 255) # Orange
+                elif active_state_name == "Drowsy":
+                    color = (0, 0, 255) # Red
                 
+            # Main Active State Overlay
             cv2.putText(
                 img=mirrored_frame,
-                text=f"State: {current_state}",
+                text=f"Active State: {active_state_name}",
                 org=(10, 40),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                 fontScale=1.2,
@@ -196,12 +193,25 @@ def main():
                 thickness=3
             )
             
+            # Raw Prediction & Loading Bar Overlay
+            if len(sequence_buffer) == 30:
+                raw_state_name = label_names.get(last_raw_prediction, "Unknown")
+                cv2.putText(
+                    img=mirrored_frame,
+                    text=f"Raw: {raw_state_name} ({consecutive_predictions}/{DEBOUNCE_FRAMES})",
+                    org=(10, 80),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.7,
+                    color=(200, 200, 200),
+                    thickness=2
+                )
+            
             # Baseline prompt
             if baseline_y is None:
                 cv2.putText(
                     img=mirrored_frame,
                     text="Press 'b' to set baseline posture",
-                    org=(10, 80),
+                    org=(10, 120),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.7,
                     color=(255, 255, 255),
@@ -221,7 +231,6 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
-    csv_file.close()
 
 if __name__ == "__main__":
     main()
