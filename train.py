@@ -6,11 +6,12 @@ from data_prep import get_dataloaders
 
 # --- Model Architecture ---
 class LSTMClassifier(nn.Module):
-    def __init__(self, input_size=3, hidden_size=64, num_layers=2, num_classes=3):
+    def __init__(self, input_size=3, hidden_size=64, num_layers=2, num_classes=3, dropout=0.3):
         super(LSTMClassifier, self).__init__()
         self.lstm = nn.LSTM(
-            input_size, hidden_size, num_layers, batch_first=True
+            input_size, hidden_size, num_layers, batch_first=True, dropout=dropout
         )
+        self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
@@ -18,6 +19,7 @@ class LSTMClassifier(nn.Module):
         out, _ = self.lstm(x)
         # Take hidden state of the last time step
         out = out[:, -1, :]
+        out = self.dropout(out)
         logits = self.fc(out)
         return logits
 
@@ -27,8 +29,9 @@ def train():
     CSV_PATH = "lstm_training_data.csv"
     SEQ_LENGTH = 30
     BATCH_SIZE = 32
-    EPOCHS = 30
+    EPOCHS = 50
     LEARNING_RATE = 0.001
+    EARLY_STOP_PATIENCE = 5
     MODEL_SAVE_PATH = "focus_lstm_model.pth"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,7 +48,10 @@ def train():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # --- Training Loop ---
+    # --- Training Loop with Early Stopping ---
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
+
     for epoch in range(1, EPOCHS + 1):
         # -- Training phase --
         model.train()
@@ -90,15 +96,28 @@ def train():
         avg_val_loss = val_loss / val_batches
         val_accuracy = 100.0 * correct / total
 
+        # -- Early Stopping Check --
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            epochs_without_improvement = 0
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            marker = "  ✓ saved"
+        else:
+            epochs_without_improvement += 1
+            marker = ""
+
         print(
             f"Epoch [{epoch:02d}/{EPOCHS}]  "
             f"Train Loss: {avg_train_loss:.4f}  |  "
             f"Val Loss: {avg_val_loss:.4f}  |  "
-            f"Val Acc: {val_accuracy:.2f}%"
+            f"Val Acc: {val_accuracy:.2f}%{marker}"
         )
 
-    # --- Save Model ---
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
+        if epochs_without_improvement >= EARLY_STOP_PATIENCE:
+            print(f"\nEarly stopping triggered after {epoch} epochs (no improvement for {EARLY_STOP_PATIENCE} epochs).")
+            break
+
+    # --- Report ---
     print(f"\nModel saved to {MODEL_SAVE_PATH}")
 
 

@@ -13,3 +13,6 @@ env/
 venv/
 .env/
 .venv/
+
+# VS
+.vscode/

@@ -14,3 +14,24 @@ class EAR:
 class GazeRatio:
     def gaze_ratio(left_corner, right_corner, iris_center):
         return float(EAR.euclidean_distance(left_corner, iris_center) / EAR.euclidean_distance(left_corner, right_corner))
+
+def get_head_pitch_ratio(face_landmarks):
+    """Calculate a scale-invariant head pitch ratio.
+
+    Compares the vertical distance from forehead to nose against
+    nose to chin. This ratio is independent of camera distance.
+
+    Args:
+        face_landmarks: MediaPipe face landmarks list.
+
+    Returns:
+        float: upper_face_distance / lower_face_distance ratio.
+    """
+    forehead_y = face_landmarks[10].y
+    nose_y = face_landmarks[1].y
+    chin_y = face_landmarks[152].y
+
+    upper_face_distance = abs(nose_y - forehead_y)
+    total_face_height = abs(chin_y - forehead_y)
+
+    return upper_face_distance / (total_face_height + 1e-6)

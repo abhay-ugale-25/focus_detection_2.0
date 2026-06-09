@@ -8,6 +8,7 @@ from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.vision import drawing_styles, drawing_utils
 from calculations import EAR as ear
 from calculations import GazeRatio as gaze
+from calculations import get_head_pitch_ratio
 
 # Mediapipe Face Mesh
 mp_face_mesh = vision.FaceLandmarker
@@ -36,14 +37,14 @@ class focus_cv:
         csv_writer = csv.writer(csv_file)
         # Write header only if the file is empty
         if csv_file.tell() == 0:
-            csv_writer.writerow(["timestamp", "avg_ear", "avg_gaze", "nose_y_delta", "label"])
+            csv_writer.writerow(["timestamp", "avg_ear", "avg_gaze", "pitch_ratio_delta", "label"])
 
         label_names = {0: "Focused", 1: "Distracted", 2: "Drowsy"}
 
         with face_mesh_obj as face_mesh:
             # Posture tracking
-            baseline_y = None
-            current_nose_y = None
+            baseline_pitch_ratio = None
+            current_pitch_ratio = None
             while True:
                 ret, frame = cap.read()
                 if ret:
@@ -72,9 +73,9 @@ class focus_cv:
                             left_eye_ear = ear.ear(left_eye_extract)
                             right_eye_ear = ear.ear(right_eye_extract)
                             avg_ear = (left_eye_ear + right_eye_ear) / 2
-                            # Nose Y (posture) calculation
-                            current_nose_y = face_landmarks[1].y
-                            nose_y_delta = current_nose_y - baseline_y if baseline_y is not None else 0.0
+                            # Pitch ratio (posture) calculation
+                            current_pitch_ratio = get_head_pitch_ratio(face_landmarks)
+                            pitch_ratio_delta = current_pitch_ratio - baseline_pitch_ratio if baseline_pitch_ratio is not None else 0.0
                             # Gaze calculation
                             right_iris = face_landmarks[right_eye_iris]
                             right_eye_corner = [face_landmarks[33], face_landmarks[133]]
@@ -84,11 +85,11 @@ class focus_cv:
                             left_gaze = gaze.gaze_ratio(left_eye_corner[0], left_eye_corner[1], left_iris)
                             avg_gaze = (right_gaze + left_gaze) / 2
                             # Write data row to CSV
-                            csv_writer.writerow([time.time(), avg_ear, avg_gaze, nose_y_delta, current_label])
+                            csv_writer.writerow([time.time(), avg_ear, avg_gaze, pitch_ratio_delta, current_label])
                             csv_file.flush()
                     # No Face Detected
                     else:
-                        baseline_y = None
+                        baseline_pitch_ratio = None
                         cv2.putText(img=mirrored_frame, text="No Face Detected", org=(100, 100), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(0, 0, 255), thickness=3)
 
                     # Debug overlay: show current recording label
@@ -109,9 +110,9 @@ class focus_cv:
                         break
                     # Set baseline Y
                     elif key == ord('b'):
-                        if current_nose_y is not None:
-                            baseline_y = current_nose_y
-                            print(f"Baseline Y: {baseline_y} is set.")
+                        if current_pitch_ratio is not None:
+                            baseline_pitch_ratio = current_pitch_ratio
+                            print(f"Baseline pitch ratio: {baseline_pitch_ratio:.4f} is set.")
                     # Label controls
                     elif key == ord('0'):
                         current_label = 0

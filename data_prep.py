@@ -14,8 +14,8 @@ def get_dataloaders(csv_path, seq_length=30, batch_size=32, train_split=0.8):
 
     # --- 2. Feature Scaling ---
     scaler = StandardScaler()
-    features = df[["avg_ear", "avg_gaze", "nose_y_delta"]].values
-    df[["avg_ear", "avg_gaze", "nose_y_delta"]] = scaler.fit_transform(features)
+    features = df[["avg_ear", "avg_gaze", "pitch_ratio_delta"]].values
+    df[["avg_ear", "avg_gaze", "pitch_ratio_delta"]] = scaler.fit_transform(features)
 
     # --- 3. Stratified Sequence Generation ---
     X_train_list, y_train_list = [], []
@@ -23,7 +23,7 @@ def get_dataloaders(csv_path, seq_length=30, batch_size=32, train_split=0.8):
 
     # Group the dataframe by label
     for label, group in df.groupby("label"):
-        group_features = group[["avg_ear", "avg_gaze", "nose_y_delta"]].values
+        group_features = group[["avg_ear", "avg_gaze", "pitch_ratio_delta"]].values
         group_labels = group["label"].values
         
         X_group, y_group = [], []
